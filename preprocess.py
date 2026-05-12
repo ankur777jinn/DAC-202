@@ -129,15 +129,39 @@ def make_crops(args):
     model = ResNetUNet(encoder_name=MODEL.stage1_encoder, pretrained=False).to(device)
     ckpt = torch.load(args.stage1_ckpt, map_location=device)
     state = ckpt.get("model", ckpt)
-    state = {k.replace("module.", ""): v for k, v in state.items()}
+    # Strip both DDP "module." and torch.compile "_orig_mod." prefixes
+    state = {k.replace("module.", "").replace("_orig_mod.", ""): v
+             for k, v in state.items()}
     model.load_state_dict(state)
     model.eval()
 
     # Run inference on ALL slices (train + val + test) so Stage 2 can use cascade
-    # crops uniformly. We DO NOT drop liver-empty slices here -- predictions on
-    # them just give an empty bbox -> fall back to full image.
+    # crops uniformly. Liver-empty slices just give an empty bbox -> Stage 2
+    # falls back to the full image for those.
     idx = LiTSCsvIndex(DATA.csv_path, DATA.data_root)
-    full_df = idx.df
+    full_df = idx.df.reset_index(drop=True)
+
+    # Build a fast ident -> (image_height, image_width) lookup ONCE.
+    # The original image dims are needed to rescale bboxes from DATA.image_size
+    # back to native resolution. We read each unique image size only once.
+    print("[crops] caching native image dimensions...")
+    full_df["ident"] = ("vol" + full_df["study_number"].astype(str)
+                        + "_s" + full_df["instance_number"].astype(str))
+    ident_to_filepath = dict(zip(full_df["ident"].tolist(),
+                                  full_df["filepath"].tolist()))
+
+    # For speed, sample one image to get dims; LiTS slices in this dump are
+    # uniformly sized within a study. We still re-check per-row below in
+    # case sizes vary, but cache the lookup.
+    sample_size_cache = {}
+    def get_hw(ident):
+        if ident in sample_size_cache:
+            return sample_size_cache[ident]
+        path = ident_to_filepath[ident]
+        with Image.open(path) as im:
+            w, h = im.size
+        sample_size_cache[ident] = (h, w)
+        return (h, w)
 
     ds = LiTSStage1Dataset(full_df, image_size=DATA.image_size, augment=False)
     loader = DataLoader(ds, batch_size=8, shuffle=False, num_workers=4,
@@ -150,19 +174,8 @@ def make_crops(args):
         imgs = imgs.to(device, non_blocking=True)
         logits = model(imgs)
         probs = torch.sigmoid(logits).cpu().numpy()
-        # Map idents back to rows -> get original image size
         for prob, ident in zip(probs, idents):
-            # find the original image size from the CSV row
-            row = full_df[
-                (full_df["study_number"].astype(str) + "_" +
-                 full_df["instance_number"].astype(str))
-                == ident.replace("vol", "").replace("_s", "_")
-            ]
-            if len(row) == 0:
-                continue
-            row = row.iloc[0]
-            orig = np.array(Image.open(row["filepath"]).convert("L"))
-            oh, ow = orig.shape
+            oh, ow = get_hw(ident)
 
             mask = (prob[0] > 0.5).astype(np.uint8)
             if mask.sum() == 0:
@@ -171,7 +184,6 @@ def make_crops(args):
             ys, xs = np.where(mask > 0)
             y0, y1 = int(ys.min()), int(ys.max()) + 1
             x0, x1 = int(xs.min()), int(xs.max()) + 1
-            # Rescale bbox from DATA.image_size to original image dims
             sy = oh / DATA.image_size
             sx = ow / DATA.image_size
             y0 = max(0, int(y0 * sy) - pad)

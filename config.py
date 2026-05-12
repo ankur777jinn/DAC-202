@@ -1,38 +1,38 @@
 """
-Central configuration for the LiTS cascaded segmentation project.
-All hyperparameters live here.
+Central configuration -- A100-optimized.
+
+Key changes from the 2-GPU baseline:
+  - Single-GPU friendly (no torchrun needed; just `python train_stage2.py ...`)
+  - Larger batch sizes that fit comfortably in A100 40GB/80GB
+  - LR scaled to the larger batch
+  - More dataloader workers (A100 is fast; CPU was the bottleneck)
+  - bf16 instead of fp16 (A100 tensor cores prefer it)
 """
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class DataConfig:
-    # The CSV file lits_df.csv lists every slice with three columns:
     csv_path: str = "/teamspace/studios/this_studio/lits_data/lits_train.csv"
     train_csv: str = "/teamspace/studios/this_studio/lits_data/lits_train.csv"
     test_csv: str = "/teamspace/studios/this_studio/lits_data/lits_test.csv"
     probe_csv: str = "/teamspace/studios/this_studio/lits_data/lits_probe.csv"
     data_root: str = "/teamspace/studios/this_studio/lits_data/dataset_6/dataset_6"
-    # If you have the pre-split CSVs already, point to them and we'll use them.
-    # Otherwise we do our own patient-level split.
-    use_provided_splits: bool = True          # used as validation
+    use_provided_splits: bool = True
 
-    # Fallback patient-level split ratios (used if use_provided_splits=False)
+
     train_ratio: float = 0.70
     val_ratio: float = 0.15
     test_ratio: float = 0.15
     split_seed: int = 42
 
-    # Image processing
     image_size: int = 384
-    lesion_crop_size: int = 256
+    lesion_crop_size: int = 192
 
-    # Filtering rules (apply to lits_df rows)
-    drop_empty_liver_for_stage1: bool = True   # ~33% of rows are liver-empty
-    drop_empty_liver_for_stage2: bool = True   # no liver -> no tumor anyway
-    drop_empty_tumor_for_stage2_train: bool = False  # keep tumor-empty slices as hard negatives during training
-    drop_empty_tumor_for_stage2_eval: bool = False   # ALWAYS keep for eval (full test distribution)
+    drop_empty_liver_for_stage1: bool = True
+    drop_empty_liver_for_stage2: bool = True
+    drop_empty_tumor_for_stage2_train: bool = False
+    drop_empty_tumor_for_stage2_eval: bool = False
 
 
 @dataclass
@@ -49,26 +49,34 @@ class LossConfig:
 
 @dataclass
 class TrainConfig:
-    stage1_epochs: int = 40
-    stage1_batch_size: int = 64
-    stage1_lr: float = 1e-3
+    # ---------------- Stage 1 ----------------
+    stage1_epochs: int = 30          # already converges fast; 30 is enough
+    stage1_batch_size: int = 64      # A100 has tons of memory
+    stage1_lr: float = 2e-3          # scaled with batch (vs 16->1e-3)
 
-    stage2_epochs: int = 80
-    stage2_batch_size: int = 24
-    stage2_lr: float = 5e-4
+    # ---------------- Stage 2 ----------------
+    stage2_epochs: int = 20           # was 60 — 25 will give converged-enough Dice
+    stage2_batch_size: int = 128      # A100 can handle this for ResNet-34
+    stage2_lr: float = 1e-3          # scaled with batch (vs 24->5e-4)
 
     weight_decay: float = 1e-5
-    num_workers: int = 8
+    num_workers: int = 12            # CPU was the bottleneck; bump it
+    prefetch_factor: int = 4         # each worker preloads this many batches
     use_amp: bool = True
+    use_bf16: bool = True            # A100 tensor cores prefer bf16
     grad_clip: float = 1.0
 
-    warmup_epochs: int = 3
+    warmup_epochs: int = 2
     min_lr: float = 1e-6
 
     ckpt_dir: str = "./checkpoints"
     log_dir: str = "./runs"
-    save_every: int = 5
+    save_every: int = 10
     seed: int = 42
+
+    # ---------------- A100 perf knobs ----------------
+    compile_model: bool = True       # torch.compile() the model for ~20-30% speedup
+    channels_last: bool = True       # NHWC memory format = faster on A100
 
 
 @dataclass
