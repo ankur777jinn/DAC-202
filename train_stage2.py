@@ -232,7 +232,7 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=TRAIN.stage2_lr,
                                   weight_decay=TRAIN.weight_decay)
     # GradScaler only needed for fp16; bf16 doesn't need scaling
-    scaler = GradScaler(device="cuda", enabled=(dtype == torch.float16))
+    scaler = GradScaler("cuda", enabled=(dtype == torch.float16))
 
     ckpt_dir = Path(TRAIN.ckpt_dir) / args.ablation
     ckpt_dir.mkdir(parents=True, exist_ok=True)

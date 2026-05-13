@@ -7,17 +7,25 @@ Key changes from the 2-GPU baseline:
   - LR scaled to the larger batch
   - More dataloader workers (A100 is fast; CPU was the bottleneck)
   - bf16 instead of fp16 (A100 tensor cores prefer it)
+
+Set the LITS_DATA_ROOT env var to point to your data directory, e.g.:
+  export LITS_DATA_ROOT=/path/to/lits_data
+or on Windows:
+  set LITS_DATA_ROOT=C:\\path\\to\\lits_data
 """
+import os
 from dataclasses import dataclass
+
+_DATA_ROOT = os.environ.get("LITS_DATA_ROOT", "./lits_data")
 
 
 @dataclass
 class DataConfig:
-    csv_path: str = "/teamspace/studios/this_studio/lits_data/lits_train.csv"
-    train_csv: str = "/teamspace/studios/this_studio/lits_data/lits_train.csv"
-    test_csv: str = "/teamspace/studios/this_studio/lits_data/lits_test.csv"
-    probe_csv: str = "/teamspace/studios/this_studio/lits_data/lits_probe.csv"
-    data_root: str = "/teamspace/studios/this_studio/lits_data/dataset_6/dataset_6"
+    csv_path: str = os.path.join(_DATA_ROOT, "lits_train.csv")
+    train_csv: str = os.path.join(_DATA_ROOT, "lits_train.csv")
+    test_csv: str = os.path.join(_DATA_ROOT, "lits_test.csv")
+    probe_csv: str = os.path.join(_DATA_ROOT, "lits_probe.csv")
+    data_root: str = os.path.join(_DATA_ROOT, "dataset_6", "dataset_6")
     use_provided_splits: bool = True
 
 
@@ -60,7 +68,7 @@ class TrainConfig:
     stage2_lr: float = 1e-3          # scaled with batch (vs 24->5e-4)
 
     weight_decay: float = 1e-5
-    num_workers: int = 12            # CPU was the bottleneck; bump it
+    num_workers: int = 4             # safe default; bump to 12 on beefy machines
     prefetch_factor: int = 4         # each worker preloads this many batches
     use_amp: bool = True
     use_bf16: bool = True            # A100 tensor cores prefer bf16
@@ -75,7 +83,7 @@ class TrainConfig:
     seed: int = 42
 
     # ---------------- A100 perf knobs ----------------
-    compile_model: bool = True       # torch.compile() the model for ~20-30% speedup
+    compile_model: bool = False      # torch.compile() — disabled by default (issues on Windows)
     channels_last: bool = True       # NHWC memory format = faster on A100
 
 
