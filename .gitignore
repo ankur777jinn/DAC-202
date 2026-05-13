@@ -1,0 +1,39 @@
+# --- System Files ---
+.DS_Store
+Thumbs.db
+
+# --- IDE/Editor Folders ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Compiled Files & Binaries ---
+*.class
+*.exe
+*.o
+*.out
+*.log
+
+# --- Python Files ---
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# --- Build Folders ---
+target/
+build/
+dist/
+
+# --- Environment Secrets ---
+.env
+
+checkpoints/
+*.pt
+
+/runs/
+
+/lits_data/
+/.triton/
+/.lightning_studio/
