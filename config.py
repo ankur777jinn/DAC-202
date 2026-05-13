@@ -1,18 +1,24 @@
 ﻿import os
 from dataclasses import dataclass
 
-# Auto-detect Lightning AI vs local
+# Auto-detect data location
 _LIGHTNING = '/teamspace/studios/this_studio/lits_data'
-_DATA_ROOT = _LIGHTNING if os.path.isdir(_LIGHTNING) else os.environ.get('LITS_DATA_ROOT', './lits_data')
+_LOCAL = './data/lits-png'
+if os.path.isdir(_LIGHTNING):
+    _DATA_ROOT = _LIGHTNING
+elif os.path.isdir(_LOCAL):
+    _DATA_ROOT = _LOCAL
+else:
+    _DATA_ROOT = os.environ.get('LITS_DATA_ROOT', _LOCAL)
 
 @dataclass
 class DataConfig:
-    csv_path: str = os.path.join(_DATA_ROOT, 'lits_train.csv')
+    csv_path: str = os.path.join(_DATA_ROOT, 'lits_df.csv')
     train_csv: str = os.path.join(_DATA_ROOT, 'lits_train.csv')
     test_csv: str = os.path.join(_DATA_ROOT, 'lits_test.csv')
     probe_csv: str = os.path.join(_DATA_ROOT, 'lits_probe.csv')
     data_root: str = os.path.join(_DATA_ROOT, 'dataset_6', 'dataset_6')
-    use_provided_splits: bool = True
+    use_provided_splits: bool = False
     train_ratio: float = 0.70
     val_ratio: float = 0.15
     test_ratio: float = 0.15
@@ -44,7 +50,7 @@ class TrainConfig:
     stage2_batch_size: int = 128
     stage2_lr: float = 1e-3
     weight_decay: float = 1e-5
-    num_workers: int = 12
+    num_workers: int = 8
     prefetch_factor: int = 4
     use_amp: bool = True
     use_bf16: bool = True
